@@ -6,7 +6,14 @@ import argparse
 import sys
 from pathlib import Path
 
-from minigit.objects import GitBlob, object_hash, object_read, object_write
+from minigit.objects import (
+    GitBlob,
+    GitTree,
+    object_hash,
+    object_read,
+    object_write,
+    tree_write_from_directory,
+)
 from minigit.repository import repo_create, repo_find
 
 
@@ -55,13 +62,68 @@ def cmd_cat_file(args: argparse.Namespace) -> int:
         elif args.size:
             print(len(obj.serialize()))
         elif args.pretty:
-            sys.stdout.buffer.write(obj.serialize())
-            sys.stdout.buffer.flush()
+            if isinstance(obj, GitTree):
+                for item in obj.items:
+                    mode_str = item.mode.zfill(6)
+                    is_tree = mode_str == "040000" or item.mode == "40000"
+                    item_type = "tree" if is_tree else "blob"
+                    print(f"{mode_str} {item_type} {item.sha}\t{item.path}")
+            else:
+                sys.stdout.buffer.write(obj.serialize())
+                sys.stdout.buffer.flush()
 
         return 0
     except Exception as exc:
         print(f"fatal: {exc}", file=sys.stderr)
         return 1
+
+
+def cmd_ls_tree(args: argparse.Namespace) -> int:
+    """Handle 'minigit ls-tree [-r] [--name-only] <tree-ish>'."""
+    try:
+        repo = repo_find()
+        obj = object_read(repo, args.tree)
+        if not isinstance(obj, GitTree):
+            print(f"fatal: not a tree object: {args.tree}", file=sys.stderr)
+            return 1
+
+        def print_tree(tree_obj: GitTree, prefix: str = "") -> None:
+            for item in tree_obj.items:
+                mode_str = item.mode.zfill(6)
+                is_tree = mode_str == "040000" or item.mode == "40000"
+                item_type = "tree" if is_tree else "blob"
+                full_path = f"{prefix}{item.path}"
+
+                if is_tree and args.recursive:
+                    sub_obj = object_read(repo, item.sha)
+                    if isinstance(sub_obj, GitTree):
+                        print_tree(sub_obj, prefix=f"{full_path}/")
+                else:
+                    if args.name_only:
+                        print(full_path)
+                    else:
+                        print(f"{mode_str} {item_type} {item.sha}\t{full_path}")
+
+        print_tree(obj)
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_write_tree(args: argparse.Namespace) -> int:
+    """Handle 'minigit write-tree [directory]'."""
+    try:
+        repo = repo_find()
+        target = Path(args.directory).resolve() if args.directory else repo.worktree
+        sha = tree_write_from_directory(target, repo)
+        print(sha)
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
 
 
 
@@ -144,6 +206,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="The name of the object to show (SHA-1 hash).",
     )
     cat_parser.set_defaults(func=cmd_cat_file)
+
+    # ls-tree
+    ls_parser = subparsers.add_parser(
+        "ls-tree",
+        help="List the contents of a tree object.",
+    )
+    ls_parser.add_argument(
+        "-r",
+        "--recursive",
+        dest="recursive",
+        action="store_true",
+        help="Recurse into sub-trees.",
+    )
+    ls_parser.add_argument(
+        "--name-only",
+        dest="name_only",
+        action="store_true",
+        help="List only filenames (one per line).",
+    )
+    ls_parser.add_argument(
+        "tree",
+        help="The tree object SHA-1 to list.",
+    )
+    ls_parser.set_defaults(func=cmd_ls_tree)
+
+    # write-tree
+    write_tree_parser = subparsers.add_parser(
+        "write-tree",
+        help="Create a tree object from the current directory.",
+    )
+    write_tree_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=None,
+        help="Directory to build tree from (default: repository root).",
+    )
+    write_tree_parser.set_defaults(func=cmd_write_tree)
 
     return parser
 

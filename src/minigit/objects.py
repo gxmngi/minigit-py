@@ -9,12 +9,24 @@ hash of that entire byte string.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
+import os
+from pathlib import Path
 import zlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from minigit.repository import GitRepository
+
+
+@dataclass
+class GitTreeLeaf:
+    """Represents a single file or subdirectory entry inside a Git tree."""
+
+    mode: str
+    path: str
+    sha: str
 
 
 class GitObject:
@@ -60,8 +72,55 @@ class GitBlob(GitObject):
         self.blobdata = data
 
 
+class GitTree(GitObject):
+    """A Git Tree stores directory contents (linking names to Blobs or sub-Trees)."""
+
+    fmt = b"tree"
+
+    def init(self) -> None:
+        self.items: list[GitTreeLeaf] = []
+
+    def serialize(self) -> bytes:
+        def sort_key(leaf: GitTreeLeaf) -> bytes:
+            name = leaf.path
+            if leaf.mode.startswith("4") or leaf.mode.startswith("04"):
+                name += "/"
+            return name.encode("utf-8")
+
+        sorted_items = sorted(self.items, key=sort_key)
+        out = bytearray()
+        for item in sorted_items:
+            mode = "40000" if item.mode in ("040000", "40000") else item.mode
+            out.extend(f"{mode} {item.path}\x00".encode("utf-8"))
+            out.extend(bytes.fromhex(item.sha))
+        return bytes(out)
+
+    def deserialize(self, data: bytes) -> None:
+        self.items = []
+        pos = 0
+        max_len = len(data)
+        while pos < max_len:
+            space_idx = data.find(b" ", pos)
+            if space_idx == -1:
+                raise ValueError("Malformed tree object: missing space delimiter")
+            mode = data[pos:space_idx].decode("ascii")
+
+            null_idx = data.find(b"\x00", space_idx)
+            if null_idx == -1:
+                raise ValueError("Malformed tree object: missing null byte delimiter")
+            path = data[space_idx + 1 : null_idx].decode("utf-8", errors="replace")
+
+            sha_bytes = data[null_idx + 1 : null_idx + 21]
+            if len(sha_bytes) != 20:
+                raise ValueError("Malformed tree object: truncated SHA-1 bytes")
+            sha = sha_bytes.hex()
+
+            self.items.append(GitTreeLeaf(mode=mode, path=path, sha=sha))
+            pos = null_idx + 21
+
+
 def object_format(data: bytes, fmt: bytes = b"blob") -> bytes:
-    """Format raw data into standard Git object format: [type] [size]\\x00[data]."""
+    """Format raw data into standard Git object format: [type] [size]\x00[data]."""
     header = f"{fmt.decode('ascii')} {len(data)}\x00".encode("ascii")
     return header + data
 
@@ -88,6 +147,7 @@ def object_write(obj: GitObject, repo: GitRepository | None = None) -> str:
 
 OBJECT_CLASSES: dict[bytes, type[GitObject]] = {
     b"blob": GitBlob,
+    b"tree": GitTree,
 }
 
 
@@ -123,5 +183,62 @@ def object_read(repo: GitRepository, sha: str) -> GitObject:
     obj = cls()
     obj.deserialize(payload)
     return obj
+
+
+def tree_write_from_directory(
+    directory: str | Path,
+    repo: GitRepository,
+    ignore_names: set[str] | None = None,
+    is_root: bool = True,
+) -> str:
+    """Recursively traverse a directory, store blobs and sub-trees, and return root tree SHA-1."""
+    dir_path = Path(directory).resolve()
+    if ignore_names is None:
+        ignore_names = {".git", ".pytest_cache", "__pycache__", ".venv", "venv", ".egg-info"}
+
+    tree = GitTree()
+
+    # Iterate sorted entries in directory
+    for entry in sorted(dir_path.iterdir(), key=lambda p: p.name):
+        if entry.name in ignore_names or entry.name.endswith(".egg-info"):
+            continue
+
+        if entry.is_dir():
+            # Recursively build sub-tree
+            sub_sha = tree_write_from_directory(
+                entry, repo, ignore_names=ignore_names, is_root=False
+            )
+            # Git does not track empty directories
+            if sub_sha:
+                tree.items.append(
+                    GitTreeLeaf(
+                        mode="040000",
+                        path=entry.name,
+                        sha=sub_sha,
+                    )
+                )
+        elif entry.is_file():
+            data = entry.read_bytes()
+            blob = GitBlob()
+            blob.deserialize(data)
+            blob_sha = object_write(blob, repo=repo)
+
+            mode = "100644"
+            if os.name != "nt" and os.access(entry, os.X_OK):
+                mode = "100755"
+
+            tree.items.append(
+                GitTreeLeaf(
+                    mode=mode,
+                    path=entry.name,
+                    sha=blob_sha,
+                )
+            )
+
+    if not tree.items and not is_root:
+        return ""
+
+    return object_write(tree, repo=repo)
+
 
 
