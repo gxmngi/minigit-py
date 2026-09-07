@@ -2,36 +2,52 @@
 
 [![CI](https://github.com/gxmngi/minigit-py/actions/workflows/ci.yml/badge.svg)](https://github.com/gxmngi/minigit-py/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> *"What I cannot create, I do not understand."* — Richard Feynman
+> "What I cannot create, I do not understand." — Richard Feynman
 
-A lightweight Git implementation written from scratch in Python. Built to deeply understand Git internals, content-addressable storage, directed acyclic graphs (DAG), and the object database behind version control.
+A lightweight Git implementation written from scratch in Python. Designed to explore Git internals, content-addressable storage, object hashing, recursive directory trees, directed acyclic commit graphs, and working tree restoration.
 
-Part of the **[Build Your Own X](https://github.com/codecrafters-io/build-your-own-x)** challenge.
+Part of the [Build Your Own X](https://github.com/codecrafters-io/build-your-own-x) challenge. Fully binary-compatible with official Git.
 
 ---
 
-## 🧠 Git Internals & Architecture
+## Git Internals and Architecture
 
-Linus Torvalds famously designed Git not as a Version Control System, but as a **content-addressable filesystem** with a VCS user interface layered on top.
+Git operates as a content-addressable filesystem with a version control user interface layered on top:
 
 ```
 .git/
-├── HEAD               # Points to active branch ref (e.g. ref: refs/heads/main)
+├── HEAD               # Symbolic pointer to current branch (e.g. ref: refs/heads/main)
 ├── config             # INI repository configuration (repositoryformatversion, filemode)
 ├── description        # Human-readable repository description
-├── objects/           # Content-addressable object store ([type] [size]\0[content] -> SHA-1)
+├── objects/           # Content-addressable object store ([type] [size]\x00[payload] -> SHA-1)
+│   └── 3b/
+│       └── 18e512...  # Compressed with zlib into 256-directory fan-out hierarchy
 └── refs/
-    ├── heads/         # Local branch pointers (files containing 40-hex commit SHA-1)
+    ├── heads/         # Branch pointers (files containing 40-character commit SHA-1)
     └── tags/          # Annotated and lightweight tag pointers
 ```
 
+### Object Model
+
+Every Git object shares a universal serialized header before compression:
+
+```
+b"[type] [size]\x00[content]"
+```
+
+- **Blob**: Pure file content (stores raw bytes, omitting filename and permissions).
+- **Tree**: Directory snapshot containing a list of `[mode] [path]\x00[20-byte-binary-sha]`.
+- **Commit**: Links a root tree snapshot, parent commit SHA(s), author/committer timestamps, and commit message.
+
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
-### Installation (Editable Mode)
+### Installation
+
+Clone and install in editable mode:
 
 ```bash
 git clone https://github.com/gxmngi/minigit-py.git
@@ -39,52 +55,133 @@ cd minigit-py
 pip install -e .
 ```
 
-### Usage
+---
 
-Initialize a new repository:
+## CLI Command Reference
+
+### Repository Initialization
 
 ```bash
-# Initialize inside a target folder
-minigit init my-new-project
-
-# Or initialize inside current directory
+# Initialize repository in current directory
 minigit init
+
+# Initialize repository in specific path
+minigit init my-repo
+```
+
+### Object Database Operations
+
+```bash
+# Compute SHA-1 hash for a file
+minigit hash-object file.txt
+
+# Compute SHA-1 and write zlib-compressed object to .git/objects/
+minigit hash-object -w file.txt
+
+# View object content (pretty-print)
+minigit cat-file -p <object-sha>
+
+# View object type (blob, tree, commit)
+minigit cat-file -t <object-sha>
+
+# View object raw size in bytes
+minigit cat-file -s <object-sha>
+```
+
+### Tree and Directory Management
+
+```bash
+# Scan directory recursively and write root tree object
+minigit write-tree
+
+# List contents of a tree object
+minigit ls-tree <tree-sha>
+
+# Recursively list all files in a tree
+minigit ls-tree -r <tree-sha>
+
+# List file names only
+minigit ls-tree --name-only <tree-sha>
+```
+
+### Commit Graphs and History
+
+```bash
+# Create a commit from an existing tree
+minigit commit-tree <tree-sha> -m "Initial commit"
+
+# Create a child commit pointing to parent commit
+minigit commit-tree <tree-sha> -p <parent-commit-sha> -m "Next commit"
+
+# Traverse commit graph and view history log
+minigit log
+minigit log <commit-sha>
+```
+
+### Branches and Working Tree Checkout
+
+```bash
+# List existing branches (* denotes active branch)
+minigit branch
+
+# Create a new branch pointing to current HEAD
+minigit branch feature-branch
+
+# Update a reference pointer manually
+minigit update-ref refs/heads/main <commit-sha>
+
+# Switch branch and restore working tree files from snapshot
+minigit checkout feature-branch
+
+# Create and switch to new branch in one step
+minigit checkout -b experiment
 ```
 
 ---
 
-## 🗺️ Roadmap & Milestones
+## Roadmap and Completed Milestones
 
-- [x] **Milestone 1: Repository Architecture & Init**
-  - `.git` directory creation hierarchy
-  - `HEAD`, `config`, and `refs` management
-  - Upward repository discovery (`repo_find`)
-- [ ] **Milestone 2: Object Model & Storage**
-  - Raw Git Object serialization (`[type] [size]\x00[content]`)
-  - SHA-1 content hashing & `zlib` compression
-  - `minigit hash-object` (write object to `.git/objects/`)
-  - `minigit cat-file` (read and decompress object)
-- [ ] **Milestone 3: Trees & Commits**
-  - Tree parsing & leaf entry creation
-  - Commit object assembly (tree pointer, parent, author, committer, timestamp, message)
-  - `minigit commit-tree` / `minigit log`
-- [ ] **Milestone 4: Staging Area & Working Tree**
-  - Git Index (`.git/index`) binary parser
-  - `minigit add`
-  - `minigit status`
+- [x] **Milestone 1: Repository Architecture and Discovery**
+  - Directory hierarchy: `.git`, `objects/`, `refs/heads/`, `refs/tags/`
+  - Upward parent search (`repo_find`) with ceiling directory guard
+  - Standard INI configuration parsing
+
+- [x] **Milestone 2: Content-Addressable Object Database**
+  - Universal header serialization (`b"[type] [size]\x00[content]"`)
+  - SHA-1 content hashing with byte-level parity to official Git
+  - Object storage with 2/38 fan-out directory structure and `zlib` compression
+  - Inspection commands: `hash-object -w`, `cat-file -p/-t/-s`
+
+- [x] **Milestone 3: Directory Trees and Recursive Structure**
+  - Binary 20-byte SHA-1 tree leaf serialization
+  - Canonical directory mode formatting (`40000` / `100644`) matching Git C core
+  - Recursive working directory scanning (`write-tree`)
+  - Tree listing commands (`ls-tree -r`, `--name-only`)
+
+- [x] **Milestone 4: Commit Graphs and History Traversal**
+  - Commit object serialization with tree pointer, parents, and author timestamps
+  - Timezone and author parsing
+  - Graph traversal along parent ancestry (`log`)
+
+- [x] **Milestone 5: References, Branches, and Working Tree Checkout**
+  - Symbolic reference resolution (`.git/HEAD`)
+  - Branch creation and listing in O(1) time
+  - Working tree snapshot restoration (`checkout [-b]`)
 
 ---
 
-## 🧪 Testing
+## Testing and Verification
 
-Run the automated test suite with pytest:
+All features are verified against official Git behavior with an automated test suite:
 
 ```bash
 pytest -v
 ```
 
+Cross-compatibility tests run real `git` commands alongside `minigit` to verify 100% hash and tree structure parity.
+
 ---
 
-## 📜 License
+## License
 
-Distributed under the [MIT License](LICENSE). Built with curiosity by [Rusdan Lamsa (@gxmngi)](https://github.com/gxmngi).
+Distributed under the [MIT License](LICENSE). Maintained by [Rusdan Lamsa (@gxmngi)](https://github.com/gxmngi).
