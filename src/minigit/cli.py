@@ -16,6 +16,7 @@ from minigit.objects import (
     object_write,
     tree_write_from_directory,
 )
+from minigit.refs import branch_create, checkout, get_current_branch, ref_list, ref_update
 from minigit.repository import repo_create, repo_find
 
 
@@ -216,6 +217,53 @@ def cmd_log(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_update_ref(args: argparse.Namespace) -> int:
+    """Handle 'minigit update-ref <ref> <newvalue>'."""
+    try:
+        repo = repo_find()
+        ref_update(repo, args.ref, args.newvalue)
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_branch(args: argparse.Namespace) -> int:
+    """Handle 'minigit branch [name] [start_point]'."""
+    try:
+        repo = repo_find()
+        if args.name:
+            start = args.start_point or "HEAD"
+            branch_create(repo, args.name, start)
+            return 0
+
+        branches = ref_list(repo, "refs/heads")
+        curr = get_current_branch(repo)
+        for b_name in sorted(branches):
+            if b_name == curr:
+                print(f"* {b_name}")
+            else:
+                print(f"  {b_name}")
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_checkout(args: argparse.Namespace) -> int:
+    """Handle 'minigit checkout [-b] <target>'."""
+    try:
+        repo = repo_find()
+        msg = checkout(repo, args.target, create_branch=args.create_branch)
+        print(msg)
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
+
+
 
 
 
@@ -373,6 +421,57 @@ def build_parser() -> argparse.ArgumentParser:
         help="Commit SHA-1 to start listing history from (default: HEAD).",
     )
     log_parser.set_defaults(func=cmd_log)
+
+    # update-ref
+    update_ref_parser = subparsers.add_parser(
+        "update-ref",
+        help="Update the object name stored in a ref safely.",
+    )
+    update_ref_parser.add_argument(
+        "ref",
+        help="The ref to update.",
+    )
+    update_ref_parser.add_argument(
+        "newvalue",
+        help="The new commit SHA.",
+    )
+    update_ref_parser.set_defaults(func=cmd_update_ref)
+
+    # branch
+    branch_parser = subparsers.add_parser(
+        "branch",
+        help="List or create branches.",
+    )
+    branch_parser.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="The name of the branch to create.",
+    )
+    branch_parser.add_argument(
+        "start_point",
+        nargs="?",
+        default="HEAD",
+        help="The new branch head will point to this commit.",
+    )
+    branch_parser.set_defaults(func=cmd_branch)
+
+    # checkout
+    checkout_parser = subparsers.add_parser(
+        "checkout",
+        help="Switch branches or restore working tree files.",
+    )
+    checkout_parser.add_argument(
+        "-b",
+        dest="create_branch",
+        action="store_true",
+        help="Create and checkout a new branch.",
+    )
+    checkout_parser.add_argument(
+        "target",
+        help="Branch name or commit SHA to checkout.",
+    )
+    checkout_parser.set_defaults(func=cmd_checkout)
 
     return parser
 
