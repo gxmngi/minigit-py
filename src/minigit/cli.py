@@ -8,7 +8,9 @@ from pathlib import Path
 
 from minigit.objects import (
     GitBlob,
+    GitCommit,
     GitTree,
+    default_author_committer,
     object_hash,
     object_read,
     object_write,
@@ -122,6 +124,98 @@ def cmd_write_tree(args: argparse.Namespace) -> int:
     except Exception as exc:
         print(f"fatal: {exc}", file=sys.stderr)
         return 1
+
+
+def cmd_commit_tree(args: argparse.Namespace) -> int:
+    """Handle 'minigit commit-tree <tree> [-p parent] -m <message>'."""
+    try:
+        repo = repo_find()
+
+        commit = GitCommit()
+        commit.tree = args.tree
+        if args.parent:
+            commit.parents = [args.parent]
+        else:
+            commit.parents = []
+
+        author_meta = default_author_committer()
+        commit.author = author_meta
+        commit.committer = author_meta
+        commit.message = args.message
+
+        sha = object_write(commit, repo=repo)
+        print(sha)
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    """Handle 'minigit log [commit]'."""
+    import datetime
+
+    try:
+        repo = repo_find()
+        current_sha = args.commit
+
+        if not current_sha:
+            head_file = repo.repo_file("HEAD")
+            if not head_file.is_file():
+                print("fatal: your current branch does not have any commits yet", file=sys.stderr)
+                return 1
+            head_content = head_file.read_text(encoding="utf-8").strip()
+            if head_content.startswith("ref: "):
+                ref_path = repo.repo_file(head_content[5:])
+                if not ref_path.is_file():
+                    print("fatal: your current branch does not have any commits yet", file=sys.stderr)
+                    return 1
+                current_sha = ref_path.read_text(encoding="utf-8").strip()
+            else:
+                current_sha = head_content
+
+        seen = set()
+        while current_sha:
+            if current_sha in seen:
+                break
+            seen.add(current_sha)
+
+            obj = object_read(repo, current_sha)
+            if not isinstance(obj, GitCommit):
+                print(f"fatal: object {current_sha} is not a commit", file=sys.stderr)
+                return 1
+
+            author_line = obj.author
+            author_display = author_line
+            date_display = ""
+            if " " in author_line:
+                parts = author_line.rsplit(" ", 2)
+                if len(parts) == 3 and parts[1].isdigit():
+                    author_display = parts[0]
+                    ts = int(parts[1])
+                    dt = datetime.datetime.fromtimestamp(ts, datetime.timezone.utc)
+                    date_display = f"Date:   {dt.strftime('%a %b %d %H:%M:%S %Y +0000')}"
+
+            print(f"commit {current_sha}")
+            print(f"Author: {author_display}")
+            if date_display:
+                print(date_display)
+            print()
+            for line in obj.message.strip().splitlines():
+                print(f"    {line}")
+            print()
+
+            if obj.parents:
+                current_sha = obj.parents[0]
+            else:
+                break
+
+        return 0
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
+
+
 
 
 
@@ -243,6 +337,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory to build tree from (default: repository root).",
     )
     write_tree_parser.set_defaults(func=cmd_write_tree)
+
+    # commit-tree
+    commit_tree_parser = subparsers.add_parser(
+        "commit-tree",
+        help="Create a new commit object.",
+    )
+    commit_tree_parser.add_argument(
+        "tree",
+        help="An existing tree object SHA-1.",
+    )
+    commit_tree_parser.add_argument(
+        "-p",
+        dest="parent",
+        metavar="parent_commit",
+        help="The SHA-1 of the parent commit object.",
+    )
+    commit_tree_parser.add_argument(
+        "-m",
+        dest="message",
+        required=True,
+        help="A paragraph in the commit log message.",
+    )
+    commit_tree_parser.set_defaults(func=cmd_commit_tree)
+
+    # log
+    log_parser = subparsers.add_parser(
+        "log",
+        help="Show commit logs.",
+    )
+    log_parser.add_argument(
+        "commit",
+        nargs="?",
+        default=None,
+        help="Commit SHA-1 to start listing history from (default: HEAD).",
+    )
+    log_parser.set_defaults(func=cmd_log)
 
     return parser
 

@@ -217,6 +217,86 @@ def test_write_tree_parity_with_official_git(tmp_path: Path):
     assert minigit_sha == git_sha
 
 
+def test_commit_serialize_deserialize():
+    from minigit.objects import GitCommit
+
+    commit = GitCommit()
+    commit.tree = "c1659564f4695ea60d577fe602ae8546ff9c5ff2"
+    commit.parents = ["bbdc88812dba79e4c8300dd08aeb37f8e728b8dad"]
+    commit.author = "Rusdan <rusdan@example.com> 1725700000 +0700"
+    commit.committer = "Rusdan <rusdan@example.com> 1725700000 +0700"
+    commit.message = "Initial commit via minigit"
+
+    raw = commit.serialize()
+    new_commit = GitCommit()
+    new_commit.deserialize(raw)
+
+    assert new_commit.tree == "c1659564f4695ea60d577fe602ae8546ff9c5ff2"
+    assert new_commit.parents == ["bbdc88812dba79e4c8300dd08aeb37f8e728b8dad"]
+    assert new_commit.author == "Rusdan <rusdan@example.com> 1725700000 +0700"
+    assert new_commit.committer == "Rusdan <rusdan@example.com> 1725700000 +0700"
+    assert new_commit.message.strip() == "Initial commit via minigit"
+
+
+def test_cli_commit_tree(tmp_path: Path, monkeypatch, capsys):
+    from minigit.cli import main
+    from minigit.objects import GitTree, object_write
+
+    repo = repo_create(tmp_path / "repo")
+    tree = GitTree()
+    tree_sha = object_write(tree, repo=repo)
+
+    monkeypatch.chdir(repo.worktree)
+    assert main(["commit-tree", tree_sha, "-m", "Milestone 4 test commit"]) == 0
+    captured = capsys.readouterr()
+    commit_sha = captured.out.strip()
+    assert len(commit_sha) == 40
+
+    # Read back with cat-file -p
+    assert main(["cat-file", "-p", commit_sha]) == 0
+    captured = capsys.readouterr()
+    assert f"tree {tree_sha}" in captured.out
+    assert "Milestone 4 test commit" in captured.out
+
+
+def test_cli_log_history(tmp_path: Path, monkeypatch, capsys):
+    from minigit.cli import main
+    from minigit.objects import GitCommit, GitTree, object_write
+
+    repo = repo_create(tmp_path / "repo")
+    tree = GitTree()
+    tree_sha = object_write(tree, repo=repo)
+
+    # First commit
+    c1 = GitCommit()
+    c1.tree = tree_sha
+    c1.author = "Rusdan <rusdan@example.com> 1725700000 +0700"
+    c1.committer = c1.author
+    c1.message = "First commit message"
+    c1_sha = object_write(c1, repo=repo)
+
+    # Second commit (points to first commit as parent)
+    c2 = GitCommit()
+    c2.tree = tree_sha
+    c2.parents = [c1_sha]
+    c2.author = "Rusdan <rusdan@example.com> 1725700100 +0700"
+    c2.committer = c2.author
+    c2.message = "Second commit message"
+    c2_sha = object_write(c2, repo=repo)
+
+    monkeypatch.chdir(repo.worktree)
+    assert main(["log", c2_sha]) == 0
+    captured = capsys.readouterr()
+
+    assert f"commit {c2_sha}" in captured.out
+    assert "Second commit message" in captured.out
+    assert f"commit {c1_sha}" in captured.out
+    assert "First commit message" in captured.out
+    assert captured.out.index(c2_sha) < captured.out.index(c1_sha)
+
+
+
+
 
 
 

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 import hashlib
 import os
 from pathlib import Path
+import time
 import zlib
 from typing import TYPE_CHECKING, Any
 
@@ -119,6 +120,69 @@ class GitTree(GitObject):
             pos = null_idx + 21
 
 
+class GitCommit(GitObject):
+    """A Git Commit links a tree snapshot, parent commit(s), author metadata, and message."""
+
+    fmt = b"commit"
+
+    def init(self) -> None:
+        self.tree: str = ""
+        self.parents: list[str] = []
+        self.author: str = ""
+        self.committer: str = ""
+        self.message: str = ""
+
+    def serialize(self) -> bytes:
+        lines = [f"tree {self.tree}"]
+        for parent in self.parents:
+            lines.append(f"parent {parent}")
+        if self.author:
+            lines.append(f"author {self.author}")
+        if self.committer:
+            lines.append(f"committer {self.committer}")
+        lines.append("")
+        msg = self.message.rstrip("\n") + "\n"
+        lines.append(msg)
+        return "\n".join(lines).encode("utf-8")
+
+    def deserialize(self, data: bytes) -> None:
+        text = data.decode("utf-8", errors="replace")
+        header_part, _, message_part = text.partition("\n\n")
+        self.message = message_part
+        self.parents = []
+        self.tree = ""
+        self.author = ""
+        self.committer = ""
+
+        for line in header_part.splitlines():
+            if line.startswith("tree "):
+                self.tree = line[5:].strip()
+            elif line.startswith("parent "):
+                self.parents.append(line[7:].strip())
+            elif line.startswith("author "):
+                self.author = line[7:].strip()
+            elif line.startswith("committer "):
+                self.committer = line[10:].strip()
+
+
+def default_author_committer() -> str:
+    """Generate author/committer string: Name <email> timestamp timezone."""
+    name = os.environ.get("GIT_AUTHOR_NAME", "Minigit Operator")
+    email = os.environ.get("GIT_AUTHOR_EMAIL", "operator@minigit.local")
+    now = int(time.time())
+
+    if time.localtime().tm_isdst and time.daylight:
+        tz_offset_sec = -time.altzone
+    else:
+        tz_offset_sec = -time.timezone
+
+    tz_hours = tz_offset_sec // 3600
+    tz_mins = abs(tz_offset_sec % 3600) // 60
+    tz_sign = "+" if tz_hours >= 0 else "-"
+    tz_str = f"{tz_sign}{abs(tz_hours):02d}{tz_mins:02d}"
+    return f"{name} <{email}> {now} {tz_str}"
+
+
 def object_format(data: bytes, fmt: bytes = b"blob") -> bytes:
     """Format raw data into standard Git object format: [type] [size]\x00[data]."""
     header = f"{fmt.decode('ascii')} {len(data)}\x00".encode("ascii")
@@ -148,6 +212,7 @@ def object_write(obj: GitObject, repo: GitRepository | None = None) -> str:
 OBJECT_CLASSES: dict[bytes, type[GitObject]] = {
     b"blob": GitBlob,
     b"tree": GitTree,
+    b"commit": GitCommit,
 }
 
 
