@@ -1,8 +1,12 @@
-# minigit-py
+# MiniGit
 
-[![CI](https://github.com/gxmngi/minigit-py/actions/workflows/ci.yml/badge.svg)](https://github.com/gxmngi/minigit-py/actions/workflows/ci.yml)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+<p align="left">
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+" /></a>
+  <a href="https://github.com/gxmngi/minigit-py/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/gxmngi/minigit-py/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Internals-Blobs_%2F_Trees_%2F_Commits-orange?style=flat-square" alt="Git Internals" />
+  <img src="https://img.shields.io/badge/Hashing-SHA--1-blueviolet?style=flat-square" alt="SHA-1" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-gray?style=flat-square" alt="License" /></a>
+</p>
 
 > "What I cannot create, I do not understand." — Richard Feynman
 
