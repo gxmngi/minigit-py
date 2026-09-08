@@ -262,12 +262,43 @@ def cmd_checkout(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_merge_base(args: argparse.Namespace) -> int:
+    """Handle 'minigit merge-base <commit1> <commit2>'."""
+    from minigit.merge import find_merge_base
+
+    try:
+        repo = repo_find()
+        c1 = ref_resolve(repo, args.commit1)
+        c2 = ref_resolve(repo, args.commit2)
+        if not c1 or not c2:
+            print("fatal: Not a valid object name", file=sys.stderr)
+            return 1
+        base = find_merge_base(repo, c1, c2)
+        if base:
+            print(base)
+            return 0
+        return 1
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
 
 
+def cmd_merge(args: argparse.Namespace) -> int:
+    """Handle 'minigit merge <branch> [-m message]'."""
+    from minigit.merge import merge_branches
 
-
-
-
+    try:
+        repo = repo_find()
+        code, msg = merge_branches(repo, args.branch, message=args.message)
+        if msg:
+            if code == 0:
+                print(msg)
+            else:
+                print(msg, file=sys.stderr)
+        return code
+    except Exception as exc:
+        print(f"fatal: {exc}", file=sys.stderr)
+        return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -472,6 +503,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Branch name or commit SHA to checkout.",
     )
     checkout_parser.set_defaults(func=cmd_checkout)
+
+    # merge-base
+    merge_base_parser = subparsers.add_parser(
+        "merge-base",
+        help="Find as good common ancestors as possible for a merge.",
+    )
+    merge_base_parser.add_argument("commit1", help="First commit.")
+    merge_base_parser.add_argument("commit2", help="Second commit.")
+    merge_base_parser.set_defaults(func=cmd_merge_base)
+
+    # merge
+    merge_parser = subparsers.add_parser(
+        "merge",
+        help="Join two or more development histories together.",
+    )
+    merge_parser.add_argument("branch", help="Branch or commit to merge into current branch.")
+    merge_parser.add_argument("-m", "--message", dest="message", default=None, help="Commit message for merge.")
+    merge_parser.set_defaults(func=cmd_merge)
 
     return parser
 

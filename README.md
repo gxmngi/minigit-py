@@ -141,6 +141,19 @@ minigit checkout feature-branch
 minigit checkout -b experiment
 ```
 
+### Three-Way Merge and Conflict Resolution
+
+```bash
+# Find Lowest Common Ancestor (merge-base) between two commits
+minigit merge-base <commit1> <commit2>
+
+# Fast-forward or three-way merge target branch into current branch
+minigit merge feature-branch
+
+# Custom merge commit message
+minigit merge feature-branch -m "Merge feature-branch into main"
+```
+
 ---
 
 ## Roadmap and Completed Milestones
@@ -171,6 +184,13 @@ minigit checkout -b experiment
   - Symbolic reference resolution (`.git/HEAD`)
   - Branch creation and listing in O(1) time
   - Working tree snapshot restoration (`checkout [-b]`)
+
+- [x] **Milestone 6: Three-Way Merge Engine and Conflict Marker Synthesis**
+  - Lowest Common Ancestor (LCA) DAG search (`merge-base`)
+  - Fast-forward detection and branch advancing
+  - Three-way tree snapshot diff and line-level merge
+  - Conflict marker synthesis (`<<<<<<< HEAD`, `=======`, `>>>>>>>`) on overlapping edits
+  - Automated merge commit creation with dual parent pointers
 
 ---
 
