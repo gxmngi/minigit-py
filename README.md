@@ -10,6 +10,10 @@
 
 > "What I cannot create, I do not understand." — Richard Feynman
 
+<p align="center">
+  <img src="assets/demo.gif" alt="MiniGit Three-Way Merge Engine Demo" width="100%" />
+</p>
+
 A lightweight Git implementation written from scratch in Python. Designed to explore Git internals, content-addressable storage, object hashing, recursive directory trees, directed acyclic commit graphs, and working tree restoration.
 
 Part of the [Build Your Own X](https://github.com/codecrafters-io/build-your-own-x) challenge. Fully binary-compatible with official Git.
